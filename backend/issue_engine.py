@@ -321,6 +321,7 @@ def build_issues(
                     "occurrences": 0,
                     "actions": [],
                     "evidence": [],
+                    "screenshots": [],
                 }
 
             issue = grouped[
@@ -355,7 +356,21 @@ def build_issues(
                 issue["evidence"].append(
                     evidence
                 )
+            screenshot = (result
+            .get("evidence", {})
+            .get("screenshot")
+            )
 
+            if (
+                screenshot
+                and screenshot not in issue["screenshots"]
+            ):
+                issue["screenshots"].append(
+                    {
+                        "action": description,
+                        "url": screenshot,
+                    }
+                )
     return list(
         grouped.values()
     )

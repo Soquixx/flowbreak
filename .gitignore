@@ -12,3 +12,5 @@ scan_result.png
 
 # Editor
 .vscode/
+# FlowBreak generated evidence
+backend/evidence/

@@ -1,20 +1,24 @@
 from __future__ import annotations
-
 from typing import Any
 from urllib.parse import urlparse
-
-from issue_engine import build_issues
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, HttpUrl
 from playwright.sync_api import sync_playwright
-
+from evidence import EVIDENCE_DIR, save_screenshot
+from issue_engine import build_issues
 
 app = FastAPI(
     title="FlowBreak API",
     description="Autonomous web application failure hunter",
     version="0.2.0",
+)
+
+app.mount(
+    "/evidence",
+    StaticFiles(directory=EVIDENCE_DIR),
+    name="evidence",
 )
 
 app.add_middleware(
@@ -27,7 +31,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 class ScanRequest(BaseModel):
     url: HttpUrl
@@ -47,14 +50,19 @@ def validate_url(url: str) -> None:
             detail="Only HTTP and HTTPS URLs are supported.",
         )
 
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
 # BASIC SCANNER
 
 @app.post("/api/scan")
-def scan_website(request: ScanRequest) -> dict[str, Any]:
+def scan_website(
+    request: ScanRequest,
+) -> dict[str, Any]:
+
     url = str(request.url)
     validate_url(url)
 
@@ -63,7 +71,10 @@ def scan_website(request: ScanRequest) -> dict[str, Any]:
 
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
+            browser = playwright.chromium.launch(
+                headless=True
+            )
+
             page = browser.new_page()
 
             page.on(
@@ -95,25 +106,36 @@ def scan_website(request: ScanRequest) -> dict[str, Any]:
             title = page.title()
             final_url = page.url
 
-            links = page.locator("a").evaluate_all(
+            links = page.locator(
+                "a"
+            ).evaluate_all(
                 """
-                elements => elements.map(a => ({
-                    text: (a.innerText || a.textContent || "").trim(),
-                    href: a.href
-                })).filter(x => x.href)
+                elements => elements
+                    .map(a => ({
+                        text: (
+                            a.innerText ||
+                            a.textContent ||
+                            ""
+                        ).trim(),
+                        href: a.href
+                    }))
+                    .filter(x => x.href)
                 """
             )
 
-            buttons = page.locator("button").evaluate_all(
+            buttons = page.locator(
+                "button"
+            ).evaluate_all(
                 """
-                elements => elements.map(button => ({
-                    text: (
-                        button.innerText ||
-                        button.textContent ||
-                        ""
-                    ).trim(),
-                    type: button.type || "button"
-                }))
+                elements => elements
+                    .map(button => ({
+                        text: (
+                            button.innerText ||
+                            button.textContent ||
+                            ""
+                        ).trim(),
+                        type: button.type || "button"
+                    }))
                 """
             )
 
@@ -137,7 +159,11 @@ def scan_website(request: ScanRequest) -> dict[str, Any]:
                 "target_url": url,
                 "final_url": final_url,
                 "title": title,
-                "status_code": response.status if response else None,
+                "status_code": (
+                    response.status
+                    if response
+                    else None
+                ),
                 "links": links[:100],
                 "buttons": buttons[:100],
                 "forms": forms,
@@ -153,8 +179,7 @@ def scan_website(request: ScanRequest) -> dict[str, Any]:
             detail=f"Scan failed: {exc}",
         ) from exc
 
-# AUTONOMOUS EXPLORER
-
+# OBSERVERS
 def attach_observers(
     page,
     console_errors: list[str],
@@ -170,7 +195,10 @@ def attach_observers(
     def handle_page_error(error) -> None:
         page_errors.append(str(error))
 
-    def handle_request_failed(request_event) -> None:
+    def handle_request_failed(
+        request_event,
+    ) -> None:
+
         failed_requests.append(
             {
                 "url": request_event.url,
@@ -180,6 +208,7 @@ def attach_observers(
         )
 
     def handle_response(response) -> None:
+
         if response.status >= 400:
             http_errors.append(
                 {
@@ -190,12 +219,27 @@ def attach_observers(
                 }
             )
 
-    page.on("console", handle_console)
-    page.on("pageerror", handle_page_error)
-    page.on("requestfailed", handle_request_failed)
-    page.on("response", handle_response)
+    page.on(
+        "console",
+        handle_console,
+    )
 
+    page.on(
+        "pageerror",
+        handle_page_error,
+    )
 
+    page.on(
+        "requestfailed",
+        handle_request_failed,
+    )
+
+    page.on(
+        "response",
+        handle_response,
+    )
+
+# ACTION RESULT
 def make_action_result(
     action_type: str,
     description: str,
@@ -240,7 +284,11 @@ def make_action_result(
         "description": description,
         "start_url": start_url,
         "end_url": page.url,
-        "status": "FAIL" if failed else "PASS",
+        "status": (
+            "FAIL"
+            if failed
+            else "PASS"
+        ),
         "problems": problems,
         "evidence": {
             "console_errors": console_errors,
@@ -251,6 +299,7 @@ def make_action_result(
         },
     }
 
+# BUTTON EXPLORATION
 
 def explore_button(
     browser,
@@ -289,7 +338,9 @@ def explore_button(
         )
 
         if buttons.count() == 0:
-            action_error = "Button disappeared during exploration."
+            action_error = (
+                "Button disappeared during exploration."
+            )
         else:
             buttons.first.click(
                 timeout=5_000
@@ -302,7 +353,9 @@ def explore_button(
 
     result = make_action_result(
         action_type="button",
-        description=f'Click button "{button_text}"',
+        description=(
+            f'Click button "{button_text}"'
+        ),
         start_url=target_url,
         page=page,
         console_errors=console_errors,
@@ -312,18 +365,25 @@ def explore_button(
         action_error=action_error,
     )
 
-    try:
-        page.screenshot(
-            path=f"explore_button_{button_index}.png",
-            full_page=True,
-        )
-    except Exception:
-        pass
+    if result["status"] == "FAIL":
+        try:
+            screenshot_url = save_screenshot(
+                page,
+                f"button_{button_index + 1:03d}.png",
+            )
+
+            result["evidence"]["screenshot"] = (
+                screenshot_url
+            )
+
+        except Exception:
+            pass
 
     page.close()
 
     return result
 
+# LINK EXPLORATION
 
 def explore_link(
     browser,
@@ -363,7 +423,9 @@ def explore_link(
         )
 
         if links.count() == 0:
-            action_error = "Link disappeared during exploration."
+            action_error = (
+                "Link disappeared during exploration."
+            )
         else:
             links.first.click(
                 timeout=5_000
@@ -376,7 +438,9 @@ def explore_link(
 
     result = make_action_result(
         action_type="link",
-        description=f'Click link "{link_text}"',
+        description=(
+            f'Click link "{link_text}"'
+        ),
         start_url=target_url,
         page=page,
         console_errors=console_errors,
@@ -386,18 +450,24 @@ def explore_link(
         action_error=action_error,
     )
 
-    try:
-        page.screenshot(
-            path=f"explore_link_{link_index}.png",
-            full_page=True,
-        )
-    except Exception:
-        pass
+    if result["status"] == "FAIL":
+        try:
+            screenshot_url = save_screenshot(
+                page,
+                f"link_{link_index + 1:03d}.png",
+            )
+
+            result["evidence"]["screenshot"] = (
+                screenshot_url
+            )
+
+        except Exception:
+            pass
 
     page.close()
 
     return result
-
+# FORM EXPLORATION
 
 def explore_form(
     browser,
@@ -432,7 +502,10 @@ def explore_form(
         forms = page.locator("form")
 
         if forms.count() <= form_index:
-            action_error = "Form disappeared during exploration."
+            action_error = (
+                "Form disappeared during exploration."
+            )
+
         else:
             form = forms.nth(form_index)
 
@@ -442,7 +515,8 @@ def explore_form(
 
                 try:
                     tag_name = input_element.evaluate(
-                        "(element) => element.tagName.toLowerCase()"
+                        "(element) => "
+                        "element.tagName.toLowerCase()"
                     )
 
                     if tag_name == "select":
@@ -457,9 +531,12 @@ def explore_form(
 
                         continue
 
-                    input_type = input_element.get_attribute(
-                        "type"
-                    ) or "text"
+                    input_type = (
+                        input_element.get_attribute(
+                            "type"
+                        )
+                        or "text"
+                    )
 
                     if input_type in {
                         "hidden",
@@ -473,13 +550,19 @@ def explore_form(
                         continue
 
                     if input_type == "email":
-                        value = "flowbreak@example.com"
+                        value = (
+                            "flowbreak@example.com"
+                        )
+
                     elif input_type == "password":
                         value = "FlowBreak123!"
+
                     elif tag_name == "textarea":
                         value = "123 Test Street"
+
                     elif input_type == "search":
                         value = "laptop"
+
                     else:
                         value = "test"
 
@@ -489,13 +572,15 @@ def explore_form(
                     continue
 
             submit_button = form.locator(
-                "button[type='submit'], input[type='submit']"
+                "button[type='submit'], "
+                "input[type='submit']"
             )
 
             if submit_button.count() > 0:
                 submit_button.first.click(
                     timeout=5_000
                 )
+
             else:
                 form.press(
                     "Enter",
@@ -509,7 +594,9 @@ def explore_form(
 
     result = make_action_result(
         action_type="form",
-        description=f"Submit form #{form_index + 1}",
+        description=(
+            f"Submit form #{form_index + 1}"
+        ),
         start_url=target_url,
         page=page,
         console_errors=console_errors,
@@ -519,18 +606,25 @@ def explore_form(
         action_error=action_error,
     )
 
-    try:
-        page.screenshot(
-            path=f"explore_form_{form_index}.png",
-            full_page=True,
-        )
-    except Exception:
-        pass
+    if result["status"] == "FAIL":
+        try:
+            screenshot_url = save_screenshot(
+                page,
+                f"form_{form_index + 1:03d}.png",
+            )
+
+            result["evidence"]["screenshot"] = (
+                screenshot_url
+            )
+
+        except Exception:
+            pass
 
     page.close()
 
     return result
 
+# AUTONOMOUS EXPLORER
 
 @app.post("/api/explore")
 def explore_website(
@@ -554,6 +648,8 @@ def explore_website(
                 headless=True
             )
 
+            # Initial discovery
+
             discovery_page = browser.new_page()
 
             discovery_page.goto(
@@ -562,48 +658,56 @@ def explore_website(
                 timeout=30_000,
             )
 
-            # Discover visible buttons.
-            buttons = discovery_page.locator(
-                "button:visible"
-            ).evaluate_all(
-                """
-                elements => elements.map((button, index) => ({
-                    index,
-                    text: (
-                        button.innerText ||
-                        button.textContent ||
-                        ""
-                    ).trim()
-                })).filter(x => x.text)
-                """
+            buttons = (
+                discovery_page
+                .locator("button:visible")
+                .evaluate_all(
+                    """
+                    elements => elements
+                        .map((button, index) => ({
+                            index,
+                            text: (
+                                button.innerText ||
+                                button.textContent ||
+                                ""
+                            ).trim()
+                        }))
+                        .filter(x => x.text)
+                    """
+                )
             )
 
-            # Discover visible links.
-            links = discovery_page.locator(
-                "a:visible"
-            ).evaluate_all(
-                """
-                elements => elements.map((a, index) => ({
-                    index,
-                    text: (
-                        a.innerText ||
-                        a.textContent ||
-                        ""
-                    ).trim(),
-                    href: a.href
-                })).filter(x => x.text && x.href)
-                """
+            links = (
+                discovery_page
+                .locator("a:visible")
+                .evaluate_all(
+                    """
+                    elements => elements
+                        .map((a, index) => ({
+                            index,
+                            text: (
+                                a.innerText ||
+                                a.textContent ||
+                                ""
+                            ).trim(),
+                            href: a.href
+                        }))
+                        .filter(x => x.text && x.href)
+                    """
+                )
             )
 
-            form_count = discovery_page.locator(
-                "form"
-            ).count()
+            form_count = (
+                discovery_page
+                .locator("form")
+                .count()
+            )
 
             discovery_page.close()
 
             actions_run = 0
 
-            # Buttons first.
+            # Explore buttons
             for button in buttons:
 
                 if actions_run >= max_actions:
@@ -618,9 +722,11 @@ def explore_website(
 
                 results.append(result)
                 actions_run += 1
+            # Explore internal links
 
-            # Internal links next.
-            target_host = urlparse(target_url).netloc
+            target_host = urlparse(
+                target_url
+            ).netloc
 
             for link in links:
 
@@ -631,7 +737,10 @@ def explore_website(
                     link["href"]
                 ).netloc
 
-                if link_host and link_host != target_host:
+                if (
+                    link_host
+                    and link_host != target_host
+                ):
                     continue
 
                 result = explore_link(
@@ -645,8 +754,9 @@ def explore_website(
                 results.append(result)
                 actions_run += 1
 
-            # Forms last.
-            for form_index in range(form_count):
+            for form_index in range(
+                form_count
+            ):
 
                 if actions_run >= max_actions:
                     break
@@ -661,6 +771,7 @@ def explore_website(
                 actions_run += 1
 
             browser.close()
+            # Build normalized issues
 
             raw_failures = [
                 result
@@ -668,7 +779,9 @@ def explore_website(
                 if result["status"] == "FAIL"
             ]
 
-            issues = build_issues(raw_failures)
+            issues = build_issues(
+                results
+            )
 
             return {
                 "success": True,
@@ -680,8 +793,11 @@ def explore_website(
                 ),
                 "actions_executed": len(results),
                 "raw_failures": len(raw_failures),
-                "unique_issues":len(issues),
-                "passes": len(results) - len(raw_failures),
+                "unique_issues": len(issues),
+                "passes": (
+                    len(results)
+                    - len(raw_failures)
+                ),
                 "issues": issues,
                 "results": results,
             }
