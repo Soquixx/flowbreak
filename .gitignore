@@ -5,3 +5,10 @@ node_modules/
 __pycache__/
 *.py[cod]
 .env
+
+# Generated scan artifacts
+scan_result.png
+*.png
+
+# Editor
+.vscode/
