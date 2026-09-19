@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlowBreak Test App</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+    <header class="navbar">
+        <div class="logo">ShopLite</div>
+
+        <nav>
+            <a href="index.html">Home</a>
+            <a href="profile.html">Profile</a>
+            <a href="orders.html">Orders</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <section class="hero">
+            <h1>Welcome to ShopLite</h1>
+            <p>A deliberately broken application for testing FlowBreak.</p>
+        </section>
+
+        <section class="card">
+            <h2>Login</h2>
+
+            <form id="loginForm">
+                <label for="email">Email</label>
+                <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    placeholder="you@example.com"
+                />
+
+                <label for="password">Password</label>
+                <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    placeholder="Password"
+                />
+
+                <button type="submit">Login</button>
+            </form>
+
+            <p id="loginStatus"></p>
+        </section>
+
+        <section class="card">
+            <h2>Product Search</h2>
+
+            <form id="searchForm">
+                <input
+                    id="searchInput"
+                    type="text"
+                    placeholder="Search products..."
+                />
+
+                <button type="submit">Search</button>
+            </form>
+
+            <div id="searchResults"></div>
+        </section>
+
+        <section class="card">
+            <h2>Actions</h2>
+
+            <button id="profileButton">
+                Open Profile
+            </button>
+
+            <button id="exportButton">
+                Export Orders
+            </button>
+
+            <button id="crashButton">
+                Check Recommendation
+            </button>
+        </section>
+
+        <section class="card">
+            <h2>Checkout</h2>
+
+            <form id="checkoutForm">
+                <label for="address">Delivery Address</label>
+
+                <textarea
+                    id="address"
+                    placeholder="Enter your address"
+                ></textarea>
+
+                <button type="submit">
+                    Place Order
+                </button>
+            </form>
+
+            <p id="checkoutStatus"></p>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
